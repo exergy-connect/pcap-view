@@ -113,3 +113,15 @@ test('BMP continuation handles overlapping retransmissions and sequence wrap', a
   const result=dissectBmpSegment(bytes.subarray(2),{sequence:0,flags:16},context);
   assert.equal(result.messages[0].name,'Initiation');assert.equal(context.nextSequence,4);
 });
+
+test('HTTP is included by default and explicit selection preserves transport streams', () => {
+  const input = bmpFixture(new TextEncoder().encode('GET / HTTP/1.1\r\nHost: example.test\r\n\r\n'));
+  for (const dissectors of ['all', ['http']]) {
+    const {packets, streams} = parsePcapng(input, {dissectors});
+    assert.equal(packets[0].protocol, 'HTTP');
+    assert.equal(packets[0].transport, 'TCP');
+    assert.equal(packets[0].application.messages[0].target, '/');
+    assert.equal(streams[0].count, 1);
+  }
+  assert.equal(parsePcapng(input, {dissectors: []}).packets[0].protocol, 'TCP');
+});

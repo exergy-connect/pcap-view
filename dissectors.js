@@ -1,4 +1,6 @@
 import bmp from './dissectors/bmp.js';
+import vxlan from './dissectors/vxlan.js';
+import http from './dissectors/http.js';
 
 const registry = new Map();
 const selectedDissector = Symbol('selectedDissector');
@@ -17,6 +19,8 @@ export function registerDissector(dissector) {
 }
 
 registerDissector(bmp);
+registerDissector(vxlan);
+registerDissector(http);
 
 export function loadDissectors(names = 'all') {
   if (names === 'all') return [...registry.values()];
@@ -28,8 +32,8 @@ export function loadDissectors(names = 'all') {
 }
 
 export function applyDissectors(packet, payload, dissectors, contexts = new Map()) {
-  if (!payload.length) return;
   const selected = contexts.get(selectedDissector);
+  if (!payload.length && !(selected?.flushOnFin && (packet.flags & 1))) return;
   // Probe without mutating decoder state. Higher confidence wins; ties retain
   // the caller's order. Legacy match predicates remain low-confidence hints.
   const candidates = selected && dissectors.includes(selected)
