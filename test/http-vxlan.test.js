@@ -81,3 +81,71 @@ test('VXLAN reports truncated and invalid headers and rejects unrelated UDP', ()
   applyDissectors(packet, new Uint8Array(30), loadDissectors());
   assert.equal(packet.protocol, 'UDP');
 });
+
+function tunnel(frame, vni = 1) {
+  const bytes = new Uint8Array(8 + frame.length);
+  bytes[0] = 8; bytes[6] = vni; bytes.set(frame, 8); return bytes;
+}
+function innerTcp(text, sequence = 0) {
+  const payload = encode(text), frame = new Uint8Array(54 + payload.length), v = new DataView(frame.buffer);
+  v.setUint16(12, 0x0800); frame[14] = 0x45; v.setUint16(16, 40 + payload.length); frame[23] = 6;
+  frame.set([192, 0, 2, 1, 192, 0, 2, 2], 26);
+  v.setUint16(34, 50000); v.setUint16(36, 80); v.setUint32(38, sequence);
+  frame[46] = 0x50; frame[47] = 16; frame.set(payload, 54); return frame;
+}
+function outer(bytes, contexts = new Map(), names = 'all') {
+  const packet = {protocol: 'UDP', source: 'outer-client', destination: 'outer-server', sport: 50000, dport: 4789};
+  applyDissectors(packet, bytes, loadDissectors(names), contexts); return packet;
+}
+
+test('VXLAN dissects inner HTTP and respects enabled dissectors', () => {
+  const bytes = tunnel(innerTcp('GET /inside HTTP/1.1\r\n\r\n'));
+  const packet = outer(bytes);
+  assert.equal(packet.protocol, 'VXLAN'); assert.equal(packet.transport, 'UDP');
+  assert.equal(packet.source, 'outer-client');
+  assert.equal(packet.application.inner.protocol, 'HTTP');
+  assert.equal(packet.application.inner.application.messages[0].target, '/inside');
+  assert.equal(packet.application.inner.payload, undefined);
+  assert.match(packet.info, /HTTP.*GET \/inside/);
+  assert.equal(outer(bytes, new Map(), ['vxlan']).application.inner.protocol, 'TCP');
+});
+
+test('VXLAN reassembles inner TCP messages and isolates VNIs', () => {
+  const contexts = new Map(), first = 'GET /inside HTTP/1.1\r\nHost: example';
+  assert.equal(outer(tunnel(innerTcp(first)), contexts).application.inner.application.pendingBytes, first.length);
+  const second = '\r\n\r\n';
+  const unrelated = outer(tunnel(innerTcp(second, first.length), 2), contexts);
+  assert.equal(unrelated.application.inner.protocol, 'TCP');
+  const inner = outer(tunnel(innerTcp(second, first.length)), contexts).application.inner;
+  assert.equal(inner.application.messages[0].headers[0].value, 'example');
+});
+
+test('VXLAN dissects inner ARP', () => {
+  const frame = new Uint8Array(42), v = new DataView(frame.buffer);
+  v.setUint16(12, 0x0806); v.setUint16(14, 1); v.setUint16(16, 0x0800);
+  frame[18] = 6; frame[19] = 4; v.setUint16(20, 1);
+  frame.set([192, 0, 2, 1], 28); frame.set([192, 0, 2, 2], 38);
+  const inner = outer(tunnel(frame)).application.inner;
+  assert.equal(inner.application.dissector, 'arp');
+  assert.equal(inner.application.targetProtocolAddress, '192.0.2.2');
+});
+
+function innerUdp(payload) {
+  const frame = new Uint8Array(42 + payload.length), v = new DataView(frame.buffer);
+  v.setUint16(12, 0x0800); frame[14] = 0x45; frame[23] = 17;
+  v.setUint16(16, frame.length - 14); v.setUint16(34, 50000); v.setUint16(36, 4789);
+  v.setUint16(38, 8 + payload.length); frame.set(payload, 42); return frame;
+}
+
+test('nested VXLAN dissection stops at the depth limit and removes raw payloads', () => {
+  let bytes = tunnel(innerTcp('GET /nested HTTP/1.1\r\n\r\n'));
+  const nested = outer(tunnel(innerUdp(bytes)));
+  assert.equal(nested.application.inner.application.inner.protocol, 'HTTP');
+  for (let i = 0; i < 12; i++) bytes = tunnel(innerUdp(bytes));
+  let packet = outer(bytes), depth = 0;
+  while (packet.application?.inner) {
+    assert.equal(packet.payload, undefined);
+    packet = packet.application.inner; depth++;
+  }
+  assert.equal(depth, 9); assert.equal(packet.protocol, 'UDP'); assert.equal(packet.payload, undefined);
+});

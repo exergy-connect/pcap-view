@@ -1,3 +1,4 @@
+import {summarizeVxlan} from './dissectors/vxlan.js';
 import {decode} from './decode.js';
 import {loadDissectors, applyDissectors} from './dissectors.js';
 
@@ -87,7 +88,7 @@ export function parsePcapng(buffer, {dissectors = 'all'} = {}) {
         packet.stream = flow.id; streams[flow.id].count++;
       }
       if (packet.payload) {
-        const key = `${packet.stream}:${packet.source}:${packet.sport}:${packet.destination}:${packet.dport}`;
+        const key = `${section}:${id}:${packet.stream}:${packet.source}:${packet.sport}:${packet.destination}:${packet.dport}`;
         let contexts = dissectionContexts.get(key);
         if (!contexts) {contexts = new Map(); dissectionContexts.set(key, contexts);}
         applyDissectors(packet, packet.payload, enabled, contexts);
@@ -102,8 +103,16 @@ export function parsePcapng(buffer, {dissectors = 'all'} = {}) {
   for (const p of packets) p.relativeTime = p.time === null ? null : p.time - base;
   // Resolve after parsing so mappings also apply to packets preceding their NRB.
   for (const endpoint of [...packets, ...streams]) {
-    endpoint.sourceNames = nameMaps[endpoint.section].get(endpoint.source) || [];
-    endpoint.destinationNames = nameMaps[endpoint.section].get(endpoint.destination) || [];
+    const names = nameMaps[endpoint.section];
+    const resolve = target => {
+      target.sourceNames = names.get(target.source) || [];
+      target.destinationNames = names.get(target.destination) || [];
+      if (target.application?.dissector === 'vxlan' && target.application.inner) {
+        resolve(target.application.inner);
+        target.info = target.application.info = summarizeVxlan(target.application);
+      }
+    };
+    resolve(endpoint);
     delete endpoint.section;
   }
   return {packets, streams};

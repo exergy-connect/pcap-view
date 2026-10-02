@@ -1,6 +1,9 @@
 import bmp from './dissectors/bmp.js';
 import vxlan from './dissectors/vxlan.js';
 import http from './dissectors/http.js';
+import arp from './dissectors/arp.js';
+import ospf from './dissectors/ospf.js';
+import isis from './dissectors/isis.js';
 
 const registry = new Map();
 const selectedDissector = Symbol('selectedDissector');
@@ -21,6 +24,9 @@ export function registerDissector(dissector) {
 registerDissector(bmp);
 registerDissector(vxlan);
 registerDissector(http);
+registerDissector(arp);
+registerDissector(ospf);
+registerDissector(isis);
 
 export function loadDissectors(names = 'all') {
   if (names === 'all') return [...registry.values()];
@@ -31,9 +37,9 @@ export function loadDissectors(names = 'all') {
   });
 }
 
-export function applyDissectors(packet, payload, dissectors, contexts = new Map()) {
+export function applyDissectors(packet, payload, dissectors, contexts = new Map(), depth = 0) {
   const selected = contexts.get(selectedDissector);
-  if (!payload.length && !(selected?.flushOnFin && (packet.flags & 1))) return;
+  if (!payload.length && !['ARP', 'OSPF', 'IS-IS'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
   // Probe without mutating decoder state. Higher confidence wins; ties retain
   // the caller's order. Legacy match predicates remain low-confidence hints.
   const candidates = selected && dissectors.includes(selected)
@@ -47,9 +53,13 @@ export function applyDissectors(packet, payload, dissectors, contexts = new Map(
       .map(({dissector}) => dissector);
   for (const dissector of candidates) {
     if (!contexts.has(dissector.name)) contexts.set(dissector.name, dissector.createContext?.() ?? {});
-    const result = dissector.dissect(payload, packet, contexts.get(dissector.name));
+    const result = dissector.dissect(payload, packet, contexts.get(dissector.name), {
+      dissectInner(inner, innerContexts) {
+        if (inner.payload && depth < 8) applyDissectors(inner, inner.payload, dissectors, innerContexts, depth + 1);
+      },
+    });
     if (result) {
-      if (packet.protocol === 'TCP' && packet.stream != null) contexts.set(selectedDissector, dissector);
+      if (packet.protocol === 'TCP') contexts.set(selectedDissector, dissector);
       packet.transport = packet.protocol;
       // Keep addresses, ports, flags, and stream identity owned by the parser.
       packet.protocol = result.protocol ?? dissector.name.toUpperCase();

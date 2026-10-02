@@ -1,3 +1,5 @@
+import {dissectArp} from './dissectors/arp.js';
+
 // Shared packet-local link, network, and transport decoding.
 export function decode(bytes, link) {
   const result = {source: '—', destination: '—', protocol: 'Unknown', info: `Link type ${link}`};
@@ -15,6 +17,19 @@ export function decode(bytes, link) {
   else if (link === 113) {if (!has(0,16)) return result; ether = u16(14); p = 16;}
   else if (link === 276) {if (!has(0,20)) return result; ether = u16(0); p = 20;}
   else return result;
+  // IEEE 802.3 length frames carry IS-IS behind the FE-FE-03 LLC header.
+  if (link === 1 && ether <= 1500 && has(p, 3) && bytes[p] === 0xfe && bytes[p+1] === 0xfe && bytes[p+2] === 3) {
+    return {...result, protocol: 'IS-IS', info: 'IS-IS', payload: bytes.subarray(p+3, Math.min(bytes.length, p+ether))};
+  }
+  // Linux cooked captures use ETH_P_802_2 rather than an 802.3 length.
+  if ([113, 276].includes(link) && ether === 4 && has(p, 3) && bytes[p] === 0xfe && bytes[p+1] === 0xfe && bytes[p+2] === 3) {
+    return {...result, protocol: 'IS-IS', info: 'IS-IS', payload: bytes.subarray(p+3)};
+  }
+  if (ether === 0x0806) {
+    const payload = bytes.subarray(p), arp = dissectArp(payload);
+    return {...result, protocol: 'ARP', info: 'Address resolution', payload,
+      ...(arp.senderProtocolAddress ? {source: arp.senderProtocolAddress, destination: arp.targetProtocolAddress} : {})};
+  }
   let proto, limit = bytes.length;
   if (ether === 0x0800) {
     result.protocol = 'IPv4';
@@ -36,7 +51,8 @@ export function decode(bytes, link) {
       if (proto === 44 && (u16(p+2) & 0xfff8)) return {...result,info:'IPv6 fragment'};
       p += len; proto = next;
     }
-  } else return {...result, protocol: ether === 0x0806 ? 'ARP' : 'Ethernet', info: ether === 0x0806 ? 'Address resolution' : `EtherType 0x${ether.toString(16)}`};
+  } else return {...result, protocol: 'Ethernet', info: `EtherType 0x${ether.toString(16)}`};
+  if (proto === 89) return {...result, protocol: 'OSPF', payload: bytes.subarray(p, limit), info: 'OSPF'};
   if (proto === 6) {
     if (p+20 > limit) return {...result,info:'Truncated TCP header'};
     const header = (bytes[p+12] >> 4)*4;

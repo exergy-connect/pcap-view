@@ -125,3 +125,48 @@ test('HTTP is included by default and explicit selection preserves transport str
   }
   assert.equal(parsePcapng(input, {dissectors: []}).packets[0].protocol, 'TCP');
 });
+
+function vxlanFixture(ipv6 = false) {
+  const frame = new Uint8Array(14 + (ipv6 ? 40 : 20));
+  const f = new DataView(frame.buffer);
+  f.setUint16(12, ipv6 ? 0x86dd : 0x0800);
+  if (ipv6) {
+    frame[14] = 0x60; frame[20] = 59;
+    frame.set([0x20, 1, 0x0d, 0xb8], 22); frame[37] = 1;
+    frame.set([0x20, 1, 0x0d, 0xb8], 38); frame[53] = 2;
+  } else {
+    frame[14] = 0x45; f.setUint16(16, 20); frame[23] = 1;
+    frame.set([192, 0, 2, 1, 192, 0, 2, 2], 26);
+  }
+  const packet = new Uint8Array(42 + 8 + frame.length), v = new DataView(packet.buffer);
+  v.setUint16(12, 0x0800); packet[14] = 0x45;
+  v.setUint16(16, packet.length - 14); packet[23] = 17;
+  packet.set([10, 0, 0, 1, 10, 0, 0, 2], 26);
+  v.setUint16(34, 50000); v.setUint16(36, 4789); v.setUint16(38, packet.length - 34);
+  packet[42] = 8; packet[48] = 42; packet.set(frame, 50);
+  const size = 32 + Math.ceil(packet.length / 4) * 4;
+  const block = new Uint8Array(size), b = new DataView(block.buffer);
+  b.setUint32(0, 6, true); b.setUint32(4, size, true);
+  b.setUint32(20, packet.length, true); b.setUint32(24, packet.length, true);
+  block.set(packet, 28); b.setUint32(size - 4, size, true);
+  return concat(fixture().slice(0, 48), block);
+}
+
+for (const ipv6 of [false, true]) test(`VXLAN resolves late inner IPv${ipv6 ? 6 : 4} hostnames and retains numeric addresses`, () => {
+  const address = last => ipv6 ? [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, last] : [192, 0, 2, last];
+  const input = concat(vxlanFixture(ipv6), nameBlock(true, [
+    {type: ipv6 ? 2 : 1, address: address(1), names: ['inner-client.example', 'alias.example']},
+    {type: ipv6 ? 2 : 1, address: address(2), names: ['inner-server.example']},
+  ]), vxlanFixture(ipv6));
+  const {packets} = parsePcapng(input);
+  const inner = packets[0].application.inner;
+  assert.deepEqual(inner.sourceNames, ['inner-client.example', 'alias.example']);
+  assert.deepEqual(inner.destinationNames, ['inner-server.example']);
+  assert.equal(inner.source, ipv6 ? '2001:db8:0:0:0:0:0:1' : '192.0.2.1');
+  assert.equal(packets[0].source, '10.0.0.1');
+  assert.match(packets[0].info, /inner-client.example → inner-server.example/);
+  assert.equal(packets[0].info, packets[0].application.info);
+  assert.deepEqual(packets[1].application.inner.sourceNames, []);
+  assert.deepEqual(packets[1].application.inner.destinationNames, []);
+  assert.match(packets[1].info, ipv6 ? /2001:db8:/ : /192\.0\.2\.1/);
+});
