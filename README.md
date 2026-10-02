@@ -2,9 +2,11 @@
 
 A dependency-free, single-page PCAPNG viewer. Files are parsed locally in a web worker; nothing is uploaded to a server.
 
-Run `npm install`, then `npm start` and open http://localhost:5173. Requires Node.js 24+ and Python 3 for the static server. Run `npm test` to check the parser.
+Open the hosted web page to use the viewer. No local installation is required.
 
-`npm run build` uses esbuild to generate `docs/app.min.js`, the single minified JavaScript bundle loaded by `docs/index.html`. The parser worker is bundled into that file and started from a local Blob URL. `npm start` rebuilds automatically and serves only `docs/`; rebuild after editing JavaScript sources.
+For development, install Node.js 24+ and run `npm install`. Run `npm test` to check the parser and `npm run build` to rebuild the browser bundles.
+
+`npm run build` uses esbuild to generate `docs/app.min.js`, the single minified JavaScript bundle loaded by `docs/index.html`. The parser worker is bundled into that file and started from a local Blob URL. Rebuild after editing JavaScript sources.
 
 Drop a `.pcapng` file or use the file picker. Choose a TCP stream in the dropdown, or click a stream number in the packet table. The table displays 100 packets per page.
 
