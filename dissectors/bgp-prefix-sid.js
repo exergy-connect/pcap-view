@@ -2,7 +2,13 @@
 // one-byte types and two-byte lengths, excluding the TLV header.
 const hex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join(' ');
 const behaviors = {16: 'End.DX6', 17: 'End.DX4', 18: 'End.DT6', 19: 'End.DT4', 20: 'End.DT46',
-  21: 'End.DX2', 22: 'End.DX2V', 23: 'End.DT2U', 24: 'End.DT2M', 65535: 'Opaque'};
+  21: 'End.DX2', 22: 'End.DX2V', 23: 'End.DT2U', 24: 'End.DT2M',
+  // IANA SRv6 Endpoint Behaviors: service behaviors with NEXT-CSID.
+  60: 'uDX6 (End.DX6 with NEXT-CSID)', 61: 'uDX4 (End.DX4 with NEXT-CSID)',
+  62: 'uDT6 (End.DT6 with NEXT-CSID)', 63: 'uDT4 (End.DT4 with NEXT-CSID)',
+  64: 'uDT46 (End.DT46 with NEXT-CSID)', 65: 'uDX2 (End.DX2 with NEXT-CSID)',
+  66: 'uDX2V (End.DX2V with NEXT-CSID)', 67: 'uDT2U (End.DT2U with NEXT-CSID)',
+  68: 'uDT2M (End.DT2M with NEXT-CSID)', 65535: 'Opaque'};
 const names = {1: 'Label-Index', 3: 'Originator SRGB', 5: 'SRv6 L3 Service', 6: 'SRv6 L2 Service'};
 
 export function dissectPrefixSid(bytes) {

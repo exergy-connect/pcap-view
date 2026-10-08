@@ -40,7 +40,12 @@ test('RFC 9252 service SIDs include behaviors and all SID structure/transpositio
     assert.equal(shape.functionLength,16); assert.equal(shape.argumentLength,0);
     assert.equal(shape.transpositionLength,16); assert.equal(shape.transpositionOffset,64);
   }
-  for (const [code,name] of [[16,'End.DX6'],[17,'End.DX4'],[18,'End.DT6'],[20,'End.DT46'],[65535,'Opaque'],[0x1234,'Unknown behavior 4660']]) {
+  for (const [code,name] of [[16,'End.DX6'],[17,'End.DX4'],[18,'End.DT6'],[20,'End.DT46'],
+    [60,'uDX6 (End.DX6 with NEXT-CSID)'],[61,'uDX4 (End.DX4 with NEXT-CSID)'],
+    [62,'uDT6 (End.DT6 with NEXT-CSID)'],[63,'uDT4 (End.DT4 with NEXT-CSID)'],
+    [64,'uDT46 (End.DT46 with NEXT-CSID)'],[65,'uDX2 (End.DX2 with NEXT-CSID)'],
+    [66,'uDX2V (End.DX2V with NEXT-CSID)'],[67,'uDT2U (End.DT2U with NEXT-CSID)'],
+    [68,'uDT2M (End.DT2M with NEXT-CSID)'],[65535,'Opaque'],[0x1234,'Unknown behavior 4660']]) {
     const parsed = dissectPrefixSid(new Uint8Array(tlv(5,[0,...information(code,[])])));
     assert.equal(parsed.error,undefined); assert.equal(parsed.tlvs[0].subTlvs[0].endpointBehaviorName,name);
   }
