@@ -76,7 +76,29 @@ export function dissectBgp(bytes, {asnBytes = 4} = {}) {
         else if (type === 3 && length === 4) attr.nextHop = ipv4(bytes.subarray(p, attrEnd));
         else if ([4, 5].includes(type) && length === 4) attr.value = view.getUint32(p);
         else if ([2, 17].includes(type)) {
-          const width = type === 17 ? 4 : asnBytes; attr.segments = [];
+          let width = type === 17 ? 4 : asnBytes;
+          if (width === 'auto') {
+            // Captures may start after OPEN negotiation. Check the entire
+            // attribute, including segment types/counts, before choosing a width.
+            const valid = candidate => {
+              let offset = start;
+              while (offset < attrEnd) {
+                if (offset + 2 > attrEnd || bytes[offset] < 1 || bytes[offset] > 4 || !bytes[offset + 1]) return false;
+                offset += 2 + bytes[offset + 1] * candidate;
+                if (offset > attrEnd) return false;
+              }
+              return offset === attrEnd;
+            };
+            const candidates = [2, 4].filter(valid);
+            if (!candidates.length) throw new Error('Invalid AS_PATH segment encoding');
+            if (candidates.length === 2 && length) {
+              attr.asnBytes = 'ambiguous';
+              attr.warning = 'AS_PATH ASN width is ambiguous without session negotiation; raw bytes retained';
+              p = attrEnd; continue;
+            }
+            width = candidates[0];
+          }
+          attr.asnBytes = width; attr.segments = [];
           while (p < attrEnd) {
             need(2, attrEnd); const segmentType = bytes[p++], count = bytes[p++]; need(count * width, attrEnd);
             const segment = {type: segmentType, name: {1: 'AS_SET', 2: 'AS_SEQUENCE', 3: 'AS_CONFED_SEQUENCE', 4: 'AS_CONFED_SET'}[segmentType], asns: []};
@@ -134,9 +156,9 @@ export function dissectBgpSegment(payload, packet, context) {
       offset = bytes.length; break;
     }
     if (length > bytes.length - offset) break;
-    // Standalone BGP defaults to legacy two-octet AS_PATH encoding. BMP
-    // supplies its per-peer ASN width explicitly to dissectBgp instead.
-    const message = dissectBgp(bytes.subarray(offset, offset + length), {asnBytes: 2});
+    // BMP supplies its per-peer ASN width. Standalone captures may omit
+    // negotiation, so decode only structurally unambiguous AS_PATH widths.
+    const message = dissectBgp(bytes.subarray(offset, offset + length), {asnBytes: 'auto'});
     result.messages.push(message);
     if (message.error) result.error = message.error;
     offset += length;

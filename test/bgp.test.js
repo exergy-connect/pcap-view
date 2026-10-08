@@ -11,6 +11,41 @@ function bmp(type, body) {
   const bytes = new Uint8Array(48 + body.length); bytes[0] = 3; bytes[5] = type;
   new DataView(bytes.buffer).setUint32(1, bytes.length); bytes.set(body, 48); return bytes;
 }
+test('standalone UPDATE decodes four-byte AS_PATH and continues through subsequent attributes/messages', () => {
+  const mpReach = [0,1,1,16,32,1,13,184,0,0,0,0,0,0,0,0,0,0,0,5,0,32,10,0,0,1,24,172,16,1];
+  const attrs = [144,14,0,30,...mpReach,64,1,1,0,80,2,0,6,2,1,0,0,254,77,64,5,4,0,0,0,100];
+  const update = bgp(2, [0,0,0,attrs.length,...attrs]);
+  const endOfRib = bgp(2, [0,0,0,0]);
+  const packet = {protocol: 'TCP', dport: 179, sequence: 4102700109};
+  applyDissectors(packet, new Uint8Array([...update,...bgp(2,[0,0,0,6,128,15,3,0,2,1]),...update,...endOfRib]), loadDissectors(['bgp']));
+  assert.equal(packet.application.error, undefined);
+  assert.equal(packet.application.messages.length, 4);
+  for (const message of packet.application.messages) assert.equal(message.error, undefined);
+  const path = packet.application.messages[0].pathAttributes[2];
+  assert.equal(path.asnBytes, 4); assert.deepEqual(path.segments[0].asns, [65101]);
+  assert.equal(packet.application.messages[0].pathAttributes[3].value, 100);
+  assert.deepEqual(packet.application.messages[3].nlri, []);
+});
+test('standalone AS_PATH width detection preserves legacy, empty and ambiguous paths', () => {
+  for (const [raw, width] of [[[2,1,254,77],2], [[2,1,0,0,254,77],4], [[],2]]) {
+    const attrs = [64,2,raw.length,...raw], packet = {protocol: 'TCP', dport: 179};
+    applyDissectors(packet, bgp(2,[0,0,0,attrs.length,...attrs]), loadDissectors(['bgp']));
+    assert.equal(packet.application.error, undefined);
+    const path = packet.application.messages[0].pathAttributes[0];
+    assert.equal(path.asnBytes, width);
+    if (raw.length) assert.deepEqual(path.segments[0].asns,[65101]);
+    else assert.deepEqual(path.segments,[]);
+  }
+  const attrs = [64,2,10,2,2,0,1,0,2,2,1,0,3,64,5,4,0,0,0,100];
+  const message = dissectBgp(bgp(2,[0,0,0,attrs.length,...attrs]), {asnBytes:'auto'});
+  assert.equal(message.error, undefined);
+  assert.equal(message.pathAttributes[0].asnBytes, 'ambiguous');
+  assert.equal(message.pathAttributes[0].segments, undefined);
+  assert.match(message.pathAttributes[0].warning,/ambiguous/);
+  assert.equal(message.pathAttributes[1].value,100);
+  const malformed = [64,2,3,2,2,0];
+  assert.match(dissectBgp(bgp(2,[0,0,0,malformed.length,...malformed]), {asnBytes:'auto'}).error,/Invalid AS_PATH/);
+});
 test('standalone BGP is registered, detects headers and decodes multiple messages', () => {
   assert.ok(loadDissectors().some(d => d.name === 'bgp'));
   const packet = {protocol: 'TCP', sport: 50000, dport: 50001, sequence: 10};
