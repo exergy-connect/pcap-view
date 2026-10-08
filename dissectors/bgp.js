@@ -1,8 +1,10 @@
+import {dissectPrefixSid} from './bgp-prefix-sid.js';
+
 // BGP message bodies (RFC 4271). Unknown attributes retain their raw bytes.
 const names = ['', 'OPEN', 'UPDATE', 'NOTIFICATION', 'KEEPALIVE', 'ROUTE-REFRESH'];
 const attributeNames = {1: 'ORIGIN', 2: 'AS_PATH', 3: 'NEXT_HOP', 4: 'MULTI_EXIT_DISC',
   5: 'LOCAL_PREF', 6: 'ATOMIC_AGGREGATE', 7: 'AGGREGATOR', 8: 'COMMUNITIES',
-  14: 'MP_REACH_NLRI', 15: 'MP_UNREACH_NLRI', 17: 'AS4_PATH', 18: 'AS4_AGGREGATOR', 32: 'LARGE_COMMUNITIES'};
+  14: 'MP_REACH_NLRI', 15: 'MP_UNREACH_NLRI', 17: 'AS4_PATH', 18: 'AS4_AGGREGATOR', 32: 'LARGE_COMMUNITIES', 40: 'PREFIX_SID'};
 const hex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join(' ');
 const ipv4 = bytes => Array.from(bytes).join('.');
 
@@ -72,7 +74,10 @@ export function dissectBgp(bytes, {asnBytes = 4} = {}) {
         const attr = {flags: {raw: flags, optional: !!(flags & 128), transitive: !!(flags & 64), partial: !!(flags & 32), extendedLength: !!(flags & 16)},
           type, name: attributeNames[type] ?? `Unknown attribute ${type}`, length, raw: hex(bytes.subarray(p, attrEnd))};
         message.pathAttributes.push(attr);
-        if (type === 1 && length === 1) attr.origin = ['IGP', 'EGP', 'INCOMPLETE'][bytes[p]] ?? bytes[p];
+        if (type === 40) {
+          Object.assign(attr, dissectPrefixSid(bytes.subarray(p, attrEnd)));
+          if (attr.error) message.error ??= attr.error;
+        } else if (type === 1 && length === 1) attr.origin = ['IGP', 'EGP', 'INCOMPLETE'][bytes[p]] ?? bytes[p];
         else if (type === 3 && length === 4) attr.nextHop = ipv4(bytes.subarray(p, attrEnd));
         else if ([4, 5].includes(type) && length === 4) attr.value = view.getUint32(p);
         else if ([2, 17].includes(type)) {
