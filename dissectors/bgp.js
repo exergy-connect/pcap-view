@@ -104,3 +104,68 @@ export function dissectBgp(bytes, {asnBytes = 4} = {}) {
   } catch (error) {message.error = error.message;}
   return message;
 }
+
+export function dissectBgpSegment(payload, packet, context) {
+  if (!payload.length) return null;
+  let sequence = (packet.sequence + ((packet.flags & 2) ? 1 : 0)) >>> 0;
+  let gap = false;
+  if (context.nextSequence !== null && packet.sequence !== undefined) {
+    const delta = (sequence - context.nextSequence) | 0;
+    if (delta < 0) {
+      if (-delta >= payload.length) return {protocol: 'BGP', info: 'BGP TCP retransmission', messages: []};
+      payload = payload.subarray(-delta);
+      sequence = context.nextSequence;
+    } else if (delta > 0) {
+      context.pending = new Uint8Array(); gap = true;
+    }
+  }
+  context.nextSequence = (sequence + payload.length) >>> 0;
+  const bytes = new Uint8Array(context.pending.length + payload.length);
+  bytes.set(context.pending); bytes.set(payload, context.pending.length);
+  const view = new DataView(bytes.buffer);
+  const result = {protocol: 'BGP', info: '', messages: []};
+  let offset = 0;
+  while (bytes.length - offset >= 19) {
+    const length = view.getUint16(offset + 16);
+    const marker = bytes.subarray(offset, offset + 16).every(b => b === 255);
+    if (!marker || length < 19) {
+      const message = dissectBgp(bytes.subarray(offset));
+      result.messages.push(message); result.error = message.error;
+      offset = bytes.length; break;
+    }
+    if (length > bytes.length - offset) break;
+    // Standalone BGP defaults to legacy two-octet AS_PATH encoding. BMP
+    // supplies its per-peer ASN width explicitly to dissectBgp instead.
+    const message = dissectBgp(bytes.subarray(offset, offset + length), {asnBytes: 2});
+    result.messages.push(message);
+    if (message.error) result.error = message.error;
+    offset += length;
+  }
+  context.pending = bytes.slice(offset);
+  const summaries = result.messages.map(message => `${message.name ?? 'BGP'}${message.error ? `: ${message.error}` : ''}`);
+  if (context.pending.length) {
+    result.pendingBytes = context.pending.length;
+    summaries.push(`BGP continuation (${context.pending.length} buffered bytes; awaiting TCP data)`);
+  }
+  if (gap) {
+    result.error = 'TCP sequence gap; BGP framing may be incomplete';
+    summaries.push(result.error);
+  }
+  result.info = summaries.join('; ');
+  return result;
+}
+
+export default {
+  name: 'bgp',
+  matches: packet => packet.protocol === 'TCP' && (packet.sport === 179 || packet.dport === 179),
+  probe(payload, packet) {
+    if (packet.protocol !== 'TCP') return 0;
+    if (payload.length >= 19 && payload.subarray(0, 16).every(b => b === 255)) {
+      const length = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint16(16);
+      if (length >= 19 && payload[18] >= 1 && payload[18] <= 5) return 100;
+    }
+    return packet.sport === 179 || packet.dport === 179 ? 1 : 0;
+  },
+  createContext: () => ({pending: new Uint8Array(), nextSequence: null}),
+  dissect: dissectBgpSegment,
+};

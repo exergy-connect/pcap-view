@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {dissectBgp} from '../dissectors/bgp.js';
 import {dissectBmp} from '../dissectors/bmp.js';
+import {applyDissectors, loadDissectors} from '../dissectors.js';
 function bgp(type, body = []) {
   const bytes = new Uint8Array(19 + body.length); bytes.fill(255, 0, 16);
   new DataView(bytes.buffer).setUint16(16, bytes.length); bytes[18] = type; bytes.set(body, 19); return bytes;
@@ -10,6 +11,44 @@ function bmp(type, body) {
   const bytes = new Uint8Array(48 + body.length); bytes[0] = 3; bytes[5] = type;
   new DataView(bytes.buffer).setUint32(1, bytes.length); bytes.set(body, 48); return bytes;
 }
+test('standalone BGP is registered, detects headers and decodes multiple messages', () => {
+  assert.ok(loadDissectors().some(d => d.name === 'bgp'));
+  const packet = {protocol: 'TCP', sport: 50000, dport: 50001, sequence: 10};
+  applyDissectors(packet, new Uint8Array([...bgp(4), ...bgp(3, [6, 2])]), loadDissectors());
+  assert.equal(packet.protocol, 'BGP');
+  assert.equal(packet.transport, 'TCP');
+  assert.deepEqual(packet.application.messages.map(m => m.name), ['KEEPALIVE', 'NOTIFICATION']);
+  const udp = {protocol: 'UDP', dport: 179};
+  applyDissectors(udp, bgp(4), loadDissectors(['bgp']));
+  assert.equal(udp.protocol, 'UDP');
+});
+test('standalone BGP buffers split headers and overlapping TCP retransmissions', () => {
+  const contexts = new Map(), dissectors = loadDissectors(['bgp']);
+  const packet = sequence => ({protocol: 'TCP', sport: 50000, dport: 179, sequence});
+  const bytes = bgp(4), first = packet(100);
+  applyDissectors(first, bytes.subarray(0, 10), dissectors, contexts);
+  assert.equal(first.application.pendingBytes, 10);
+  const next = packet(105);
+  applyDissectors(next, bytes.subarray(5), dissectors, contexts);
+  assert.equal(next.application.messages[0].name, 'KEEPALIVE');
+  assert.equal(next.application.pendingBytes, undefined);
+  const duplicate = packet(100);
+  applyDissectors(duplicate, bytes, dissectors, contexts);
+  assert.match(duplicate.info, /retransmission/);
+});
+test('standalone BGP reports malformed framing and sequence gaps', () => {
+  const contexts = new Map(), dissectors = loadDissectors(['bgp']);
+  const packet = sequence => ({protocol: 'TCP', dport: 179, sequence});
+  applyDissectors(packet(10), bgp(4).subarray(0, 5), dissectors, contexts);
+  const next = packet(30);
+  applyDissectors(next, bgp(4), dissectors, contexts);
+  assert.match(next.application.error, /sequence gap/);
+  assert.equal(next.application.messages[0].name, 'KEEPALIVE');
+  const malformed = bgp(4); malformed[17] = 18;
+  const invalid = packet(0);
+  applyDissectors(invalid, malformed, dissectors);
+  assert.match(invalid.application.error, /Invalid BGP message length/);
+});
 test('BMP UPDATE expands attributes, four-byte AS paths, communities and IPv4 routes', () => {
   const attrs = [64,1,1,0, 64,2,6,2,1,0,0,252,0, 64,3,4,192,0,2,1, 64,5,4,0,0,0,100, 192,8,4,252,0,0,42];
   const body = [0,4,24,10,0,0,0,attrs.length,...attrs,24,203,0,113];

@@ -1,7 +1,11 @@
 import bmp from './dissectors/bmp.js';
+import bgp from './dissectors/bgp.js';
 import vxlan from './dissectors/vxlan.js';
 import http from './dissectors/http.js';
 import arp from './dissectors/arp.js';
+import lldp from './dissectors/lldp.js';
+import mrc from './dissectors/mrc.js';
+import roce from './dissectors/roce.js';
 import ospf from './dissectors/ospf.js';
 import isis from './dissectors/isis.js';
 
@@ -22,9 +26,13 @@ export function registerDissector(dissector) {
 }
 
 registerDissector(bmp);
+registerDissector(bgp);
 registerDissector(vxlan);
 registerDissector(http);
 registerDissector(arp);
+registerDissector(lldp);
+registerDissector(mrc);
+registerDissector(roce);
 registerDissector(ospf);
 registerDissector(isis);
 
@@ -39,7 +47,7 @@ export function loadDissectors(names = 'all') {
 
 export function applyDissectors(packet, payload, dissectors, contexts = new Map(), depth = 0) {
   const selected = contexts.get(selectedDissector);
-  if (!payload.length && !['ARP', 'OSPF', 'IS-IS'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
+  if (!payload.length && !['ARP', 'LLDP', 'RoCE', 'OSPF', 'IS-IS'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
   // Probe without mutating decoder state. Higher confidence wins; ties retain
   // the caller's order. Legacy match predicates remain low-confidence hints.
   const candidates = selected && dissectors.includes(selected)
