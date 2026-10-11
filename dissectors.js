@@ -8,6 +8,7 @@ import mrc from './dissectors/mrc.js';
 import roce from './dissectors/roce.js';
 import ospf from './dissectors/ospf.js';
 import isis from './dissectors/isis.js';
+import ethernetInIp from './dissectors/ethernet-in-ip.js';
 
 const registry = new Map();
 const selectedDissector = Symbol('selectedDissector');
@@ -35,6 +36,7 @@ registerDissector(mrc);
 registerDissector(roce);
 registerDissector(ospf);
 registerDissector(isis);
+registerDissector(ethernetInIp);
 
 export function loadDissectors(names = 'all') {
   if (names === 'all') return [...registry.values()];
@@ -47,7 +49,7 @@ export function loadDissectors(names = 'all') {
 
 export function applyDissectors(packet, payload, dissectors, contexts = new Map(), depth = 0) {
   const selected = contexts.get(selectedDissector);
-  if (!payload.length && !['ARP', 'LLDP', 'RoCE', 'OSPF', 'IS-IS'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
+  if (!payload.length && !['ARP', 'LLDP', 'RoCE', 'OSPF', 'IS-IS', 'Ethernet-in-IP'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
   // Probe without mutating decoder state. Higher confidence wins; ties retain
   // the caller's order. Legacy match predicates remain low-confidence hints.
   const candidates = selected && dissectors.includes(selected)

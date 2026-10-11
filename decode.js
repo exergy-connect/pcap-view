@@ -62,6 +62,10 @@ export function decode(bytes, link) {
       p += len; proto = next;
     }
   } else return {...result, protocol: 'Ethernet', info: `EtherType 0x${ether.toString(16)}`};
+  if (proto === 143) {
+    const protocol = 'Ethernet-in-IP';
+    return {...result, protocol, payload: bytes.subarray(p, limit), info: protocol};
+  }
   if (proto === 89) return {...result, protocol: 'OSPF', payload: bytes.subarray(p, limit), info: 'OSPF'};
   if (proto === 6) {
     if (p+20 > limit) return {...result,info:'Truncated TCP header'};
