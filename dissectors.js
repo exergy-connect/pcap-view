@@ -9,6 +9,10 @@ import roce from './dissectors/roce.js';
 import ospf from './dissectors/ospf.js';
 import isis from './dissectors/isis.js';
 import ethernetInIp from './dissectors/ethernet-in-ip.js';
+import icmp from './dissectors/icmp.js';
+import tcp from './dissectors/tcp.js';
+import udp from './dissectors/udp.js';
+import {transportBytes} from './dissectors/transport.js';
 
 const registry = new Map();
 const selectedDissector = Symbol('selectedDissector');
@@ -37,6 +41,9 @@ registerDissector(roce);
 registerDissector(ospf);
 registerDissector(isis);
 registerDissector(ethernetInIp);
+registerDissector(icmp);
+registerDissector(tcp);
+registerDissector(udp);
 
 export function loadDissectors(names = 'all') {
   if (names === 'all') return [...registry.values()];
@@ -48,13 +55,28 @@ export function loadDissectors(names = 'all') {
 }
 
 export function applyDissectors(packet, payload, dissectors, contexts = new Map(), depth = 0) {
+  const raw = packet[transportBytes];
+  delete packet[transportBytes];
+  if (raw) {
+    const transport = dissectors.find(d => d.layer === 'transport' && d.matches({protocol: raw.protocol}));
+    if (transport) {
+      const result = transport.dissect(raw.bytes, packet);
+      if (result) {
+        packet.transport = raw.protocol;
+        packet.transportDetails = {dissector: transport.name, ...result};
+        packet.application = packet.transportDetails;
+        packet.protocol = result.protocol;
+        packet.info = result.info;
+      }
+    }
+  }
   const selected = contexts.get(selectedDissector);
-  if (!payload.length && !['ARP', 'LLDP', 'RoCE', 'OSPF', 'IS-IS', 'Ethernet-in-IP'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
+  if (!payload.length && !['ARP', 'LLDP', 'RoCE', 'OSPF', 'IS-IS', 'Ethernet-in-IP', 'ICMP', 'ICMPv6'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
   // Probe without mutating decoder state. Higher confidence wins; ties retain
   // the caller's order. Legacy match predicates remain low-confidence hints.
   const candidates = selected && dissectors.includes(selected)
     ? [selected]
-    : dissectors.map((dissector, order) => ({
+    : dissectors.filter(d => d.layer !== 'transport').map((dissector, order) => ({
       dissector, order,
       score: dissector.probe ? dissector.probe(payload, packet)
         : (dissector.matches(packet) ? 1 : 0),

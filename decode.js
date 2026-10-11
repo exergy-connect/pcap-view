@@ -1,4 +1,5 @@
 import {dissectArp} from './dissectors/arp.js';
+import {transportBytes} from './dissectors/transport.js';
 
 // Shared packet-local link, network, and transport decoding.
 export function decode(bytes, link) {
@@ -77,13 +78,20 @@ export function decode(bytes, link) {
     return {...result, protocol, payload: bytes.subarray(p, limit), info: protocol};
   }
   if (proto === 89) return {...result, protocol: 'OSPF', payload: bytes.subarray(p, limit), info: 'OSPF'};
+  if (proto === 1 || proto === 58) return {...result, protocol: proto === 1 ? 'ICMP' : 'ICMPv6', payload: bytes.subarray(p, limit), info: `IP protocol ${proto}`};
   if (proto === 6) {
-    if (p+20 > limit) return {...result,info:'Truncated TCP header'};
+    result[transportBytes] = {protocol: 'TCP', bytes: bytes.subarray(p, limit)};
+    if (p+20 > limit) return {...result,payload:new Uint8Array(),info:'Truncated TCP header'};
     const header = (bytes[p+12] >> 4)*4;
-    if (header < 20 || p+header > limit) return {...result,info:'Invalid or truncated TCP header'};
+    if (header < 20 || p+header > limit) return {...result,payload:new Uint8Array(),info:'Invalid or truncated TCP header'};
     const flags = bytes[p+13], names = ['FIN','SYN','RST','PSH','ACK','URG','ECE','CWR'].filter((_,i) => flags & (1<<i));
     return {...result,protocol:'TCP',payload:bytes.subarray(p+header,limit),sport:u16(p),dport:u16(p+2),flags,sequence:u32(p+4),acknowledgment:u32(p+8),info:`${u16(p)} → ${u16(p+2)} [${names.join(', ')}] Seq=${u32(p+4)} Ack=${u32(p+8)} Len=${limit-p-header}`};
   }
-  if (proto === 17 && p+8 <= limit) return {...result,protocol:'UDP',payload:bytes.subarray(p+8,Math.min(limit,p+u16(p+4))),sport:u16(p),dport:u16(p+2),info:`${u16(p)} → ${u16(p+2)} Len=${Math.max(0,u16(p+4)-8)}`};
+  if (proto === 17) {
+    result[transportBytes] = {protocol: 'UDP', bytes: bytes.subarray(p, limit)};
+    if (p+8 > limit) return {...result,payload:new Uint8Array(),info:'Truncated UDP header'};
+    const length = u16(p+4);
+    return {...result,protocol:'UDP',payload:length >= 8 ? bytes.subarray(p+8,Math.min(limit,p+length)) : new Uint8Array(),sport:u16(p),dport:u16(p+2),info:`${u16(p)} → ${u16(p+2)} Len=${Math.max(0,length-8)}`};
+  }
   return {...result,protocol:proto === 1 ? 'ICMP' : proto === 58 ? 'ICMPv6' : result.protocol,info:`IP protocol ${proto}`};
 }

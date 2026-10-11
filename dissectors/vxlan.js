@@ -1,4 +1,5 @@
 import {decode} from '../decode.js';
+import {transportBytes} from './transport.js';
 
 export function summarizeVxlan({vni, inner}) {
   return `VNI=${vni} ${inner.protocol} ${inner.sourceNames?.[0] || inner.source} → ${inner.destinationNames?.[0] || inner.destination}; ${inner.info}`;
@@ -25,6 +26,7 @@ export function dissectVxlan(bytes, packet = {}, context = {flows: new Map()}, h
     helpers.dissectInner(inner, flow.contexts);
   }
   delete inner.payload;
+  delete inner[transportBytes];
   if (frame.length >= 14) {
     const mac = start => Array.from(frame.subarray(start, start + 6), b => b.toString(16).padStart(2, '0')).join(':');
     inner.sourceMac = mac(6); inner.destinationMac = mac(0);

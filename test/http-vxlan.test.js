@@ -65,6 +65,7 @@ test('VXLAN exposes VNI and inner Ethernet/IPv4/UDP while retaining outer endpoi
   assert.equal(packet.application.vni, 0x123456);
   assert.equal(packet.application.inner.source, '192.0.2.1');
   assert.equal(packet.application.inner.dport, 53);
+  assert.equal(packet.application.inner.transportDetails.dissector, 'udp');
   assert.equal(packet.application.inner.payload, undefined);
   const other = {protocol: 'UDP', dport: 12345};
   applyDissectors(other, bytes, loadDissectors());
@@ -104,6 +105,7 @@ test('VXLAN dissects inner HTTP and respects enabled dissectors', () => {
   assert.equal(packet.protocol, 'VXLAN'); assert.equal(packet.transport, 'UDP');
   assert.equal(packet.source, 'outer-client');
   assert.equal(packet.application.inner.protocol, 'HTTP');
+  assert.equal(packet.application.inner.transportDetails.dissector, 'tcp');
   assert.equal(packet.application.inner.application.messages[0].target, '/inside');
   assert.equal(packet.application.inner.payload, undefined);
   assert.match(packet.info, /HTTP.*GET \/inside/);

@@ -1,4 +1,5 @@
 import {decode} from '../decode.js';
+import {transportBytes} from './transport.js';
 
 export function summarizeEthernetInIp({protocol, inner}) {
   return `${protocol} ${inner.protocol} ${inner.sourceNames?.[0] || inner.source} → ${inner.destinationNames?.[0] || inner.destination}; ${inner.info}`;
@@ -23,6 +24,7 @@ export function dissectEthernetInIp(frame, packet = {}, context = {flows: new Ma
     helpers.dissectInner(inner, flow.contexts);
   }
   delete inner.payload;
+  delete inner[transportBytes];
   return {...result, inner, info: summarizeEthernetInIp({...result, inner})};
 }
 
