@@ -69,3 +69,39 @@ test('routing dissectors reject all truncated prefixes without throwing', () => 
   const invalid = isisLsp(); invalid[37] = 129; assert.match(dissectIsis(invalid).error, /locator length/);
   const bad = ospf(3, new Uint8Array(4)); view(bad).setUint32(16, 0xffffffff); assert.ok(dissectOspf(bad).error);
 });
+
+test('Jumbo LLC decodes IS-IS over Ethernet, stacked VLANs and cooked captures', () => {
+  const pdu = isisLsp();
+  for (const [link, tags] of [[1, 0], [1, 1], [1, 2], [113, 0], [276, 0]]) {
+    const offset = link === 1 ? 14 + tags * 4 : link === 113 ? 16 : 20;
+    // Large padding also checks that the EtherType is not used as a length.
+    const b = new Uint8Array(offset + 3 + pdu.length + 36000), v = view(b);
+    if (link === 1) {
+      for (let i = 0; i < tags; i++) v.setUint16(12 + i * 4, i ? 0x8100 : 0x88a8);
+    }
+    v.setUint16(link === 1 ? offset - 2 : link === 113 ? 14 : 0, 0x8870);
+    b.set([254, 254, 3], offset); b.set(pdu, offset + 3);
+    const decoded = decode(b, link);
+    assert.equal(decoded.protocol, 'IS-IS');
+    assert.deepEqual(decoded.payload, b.subarray(offset + 3));
+    const packet = dissect(b, link);
+    assert.equal(packet.application.dissector, 'isis');
+    assert.equal(packet.application.error, undefined);
+    assert.equal(packet.application.pduName, 'L1 LSP');
+    assert.equal(packet.application.locators[0].locator, '2001:db8:1:0:0:0:0:0/48');
+  }
+});
+
+test('Jumbo LLC labels unsupported and truncated payloads without assuming IS-IS', () => {
+  for (const payload of [[], [254], [254, 254], [0xaa, 0xaa, 3], [254, 254, 0]]) {
+    const b = new Uint8Array(14 + payload.length); view(b).setUint16(12, 0x8870); b.set(payload, 14);
+    const packet = dissect(b);
+    assert.equal(packet.protocol, 'LLC');
+    assert.equal(packet.application, undefined);
+    assert.match(packet.info, /Jumbo LLC .*0x8870/);
+    if (payload.length < 3) assert.match(packet.info, /truncated LLC header/);
+    else assert.match(packet.info, /DSAP 0x.*SSAP 0x.*Control 0x/);
+  }
+  const b = new Uint8Array(17); view(b).setUint16(12, 0x8870); b.set([254, 254, 3], 14);
+  assert.match(dissect(b).application.error, /Truncated/i);
+});
