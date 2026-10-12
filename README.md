@@ -115,3 +115,5 @@ For large captures, prefer `open()` and bounded pages: parsing, filtering, and r
 Serve the bundle over HTTP(S). Sites with Content Security Policy must permit Blob workers (`worker-src blob:`) and the library script under their `script-src` policy. No capture data is uploaded.
 
 Copyright © 2026 Exergy ∞ LLC.
+
+Ultra Ethernet Transport (UET) over native IPv4 protocol / IPv6 Next Header 253 or UDP destination port 4793 is enabled by default and selectable with `['uet']`. It exposes the entropy header, PDS request/ACK/NACK/control fields, SES request/response headers, payload previews and CRC trailer, following the [UE specification](https://ultraethernet.org/wp-content/uploads/sites/20/2026/01/UE-Specification-1.0.2-1.pdf). IPv6 extension headers are skipped. CC extensions are retained as raw hex; secure transport and opcode-specific SES extensions report unsupported-format errors and retain raw bytes. CRCs are displayed without verification. UDP encapsulation starts directly at the PDS header; the UDP source port supplies entropy.

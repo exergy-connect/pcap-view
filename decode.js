@@ -85,6 +85,7 @@ export function decode(bytes, link) {
     const protocol = 'Ethernet-in-IP';
     return {...result, protocol, payload: bytes.subarray(p, limit), info: protocol};
   }
+  if (proto === 253) return {...result, protocol: 'UET', payload: bytes.subarray(p, limit), info: 'Native UET'};
   if (proto === 89) return {...result, protocol: 'OSPF', payload: bytes.subarray(p, limit), info: 'OSPF'};
   if (proto === 1 || proto === 58) return {...result, protocol: proto === 1 ? 'ICMP' : 'ICMPv6', payload: bytes.subarray(p, limit), info: `IP protocol ${proto}`};
   if (proto === 6) {
