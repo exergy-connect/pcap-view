@@ -4,6 +4,7 @@ import vxlan from './dissectors/vxlan.js';
 import http from './dissectors/http.js';
 import arp from './dissectors/arp.js';
 import lldp from './dissectors/lldp.js';
+import lacp from './dissectors/lacp.js';
 import mrc from './dissectors/mrc.js';
 import roce from './dissectors/roce.js';
 import ospf from './dissectors/ospf.js';
@@ -36,6 +37,7 @@ registerDissector(vxlan);
 registerDissector(http);
 registerDissector(arp);
 registerDissector(lldp);
+registerDissector(lacp);
 registerDissector(mrc);
 registerDissector(roce);
 registerDissector(ospf);
@@ -71,7 +73,7 @@ export function applyDissectors(packet, payload, dissectors, contexts = new Map(
     }
   }
   const selected = contexts.get(selectedDissector);
-  if (!payload.length && !['ARP', 'LLDP', 'RoCE', 'OSPF', 'IS-IS', 'Ethernet-in-IP', 'ICMP', 'ICMPv6'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
+  if (!payload.length && !['ARP', 'LLDP', 'LACP', 'RoCE', 'OSPF', 'IS-IS', 'Ethernet-in-IP', 'ICMP', 'ICMPv6'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
   // Probe without mutating decoder state. Higher confidence wins; ties retain
   // the caller's order. Legacy match predicates remain low-confidence hints.
   const candidates = selected && dissectors.includes(selected)

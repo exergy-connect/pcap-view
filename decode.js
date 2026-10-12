@@ -36,6 +36,14 @@ export function decode(bytes, link) {
   if ([113, 276].includes(link) && ether === 4 && has(p, 3) && bytes[p] === 0xfe && bytes[p+1] === 0xfe && bytes[p+2] === 3) {
     return {...result, protocol: 'IS-IS', info: 'IS-IS', payload: bytes.subarray(p+3)};
   }
+  if (ether === 0x8809) {
+    const payload = bytes.subarray(p), isLacp = payload[0] === 1;
+    return {...result, protocol: isLacp ? 'LACP' : 'Slow Protocols',
+      info: isLacp ? 'Link Aggregation Control Protocol' : `Slow Protocols${payload.length ? ` subtype ${payload[0]}` : ': truncated subtype'}`,
+      payload,
+      ...(link === 1 ? {source: Array.from(bytes.subarray(6, 12), b => b.toString(16).padStart(2, '0')).join(':'),
+        destination: Array.from(bytes.subarray(0, 6), b => b.toString(16).padStart(2, '0')).join(':')} : {})};
+  }
   if (ether === 0x8915) {
     return {...result, protocol: 'RoCE', info: 'RDMA over Converged Ethernet', payload: bytes.subarray(p),
       ...(link === 1 ? {source: Array.from(bytes.subarray(6, 12), b => b.toString(16).padStart(2, '0')).join(':'),
