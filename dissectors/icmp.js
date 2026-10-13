@@ -3,7 +3,11 @@ const types4 = {0: 'Echo reply', 3: 'Destination unreachable', 4: 'Source quench
   5: 'Redirect', 8: 'Echo request', 11: 'Time exceeded', 12: 'Parameter problem',
   13: 'Timestamp request', 14: 'Timestamp reply', 17: 'Address mask request', 18: 'Address mask reply'};
 const types6 = {1: 'Destination unreachable', 2: 'Packet too big', 3: 'Time exceeded',
-  4: 'Parameter problem', 128: 'Echo request', 129: 'Echo reply'};
+  4: 'Parameter problem', 128: 'Echo request', 129: 'Echo reply',
+  131: 'Multicast Listener Report', 132: 'Multicast Listener Done',
+  133: 'Router Solicitation', 134: 'Router Advertisement',
+  135: 'Neighbor Solicitation', 136: 'Neighbor Advertisement',
+  143: 'Version 2 Multicast Listener Report'};
 const codes4 = {
   3: ['Network unreachable', 'Host unreachable', 'Protocol unreachable', 'Port unreachable',
     'Fragmentation needed', 'Source route failed', 'Destination network unknown', 'Destination host unknown',
