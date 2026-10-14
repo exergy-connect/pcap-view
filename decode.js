@@ -18,23 +18,22 @@ export function decode(bytes, link) {
   else if (link === 113) {if (!has(0,16)) return result; ether = u16(14); p = 16;}
   else if (link === 276) {if (!has(0,20)) return result; ether = u16(0); p = 20;}
   else return result;
-  // Jumbo LLC uses an EtherType instead of the IEEE 802.3 payload length.
-  // Do not interpret 0x8870 as a length or assume every LLC payload is IS-IS.
-  if (ether === 0x8870) {
-    if (!has(p, 3)) return {...result, protocol: 'LLC', info: 'Jumbo LLC (EtherType 0x8870): truncated LLC header'};
-    if (bytes[p] === 0xfe && bytes[p+1] === 0xfe && bytes[p+2] === 3) {
-      return {...result, protocol: 'IS-IS', info: 'IS-IS over Jumbo LLC', payload: bytes.subarray(p+3)};
+  // OSI protocols share FE-FE-03 LLC; the NLPID selects ESIS or IS-IS.
+  const llc = ether === 0x8870 || (link === 1 && ether <= 1500) || ([113, 276].includes(link) && ether === 4);
+  if (llc) {
+    const end = link === 1 && ether <= 1500 ? Math.min(bytes.length, p + ether) : bytes.length;
+    const payload = bytes.subarray(p, end);
+    const addresses = link === 1 ? {
+      source: Array.from(bytes.subarray(6, 12), b => b.toString(16).padStart(2, '0')).join(':'),
+      destination: Array.from(bytes.subarray(0, 6), b => b.toString(16).padStart(2, '0')).join(':'),
+    } : {};
+    if (payload.length < 3) return {...result, ...addresses, protocol: 'LLC', info: ether === 0x8870 ? 'Jumbo LLC (EtherType 0x8870): truncated LLC header' : 'Truncated LLC header'};
+    if (payload[0] === 0xfe && payload[1] === 0xfe && payload[2] === 3) {
+      const protocol = payload[3] === 0x82 ? 'ESIS' : payload[3] === 0x83 || payload.length === 3 ? 'IS-IS' : 'OSI';
+      return {...result, ...addresses, protocol, info: `${protocol}${ether === 0x8870 ? ' over Jumbo LLC' : ''}`, payload: payload.subarray(3)};
     }
     const hex = n => n.toString(16).padStart(2, '0');
-    return {...result, protocol: 'LLC', info: `Jumbo LLC (EtherType 0x8870): DSAP 0x${hex(bytes[p])}, SSAP 0x${hex(bytes[p+1])}, Control 0x${hex(bytes[p+2])}`};
-  }
-  // IEEE 802.3 length frames carry IS-IS behind the FE-FE-03 LLC header.
-  if (link === 1 && ether <= 1500 && has(p, 3) && bytes[p] === 0xfe && bytes[p+1] === 0xfe && bytes[p+2] === 3) {
-    return {...result, protocol: 'IS-IS', info: 'IS-IS', payload: bytes.subarray(p+3, Math.min(bytes.length, p+ether))};
-  }
-  // Linux cooked captures use ETH_P_802_2 rather than an 802.3 length.
-  if ([113, 276].includes(link) && ether === 4 && has(p, 3) && bytes[p] === 0xfe && bytes[p+1] === 0xfe && bytes[p+2] === 3) {
-    return {...result, protocol: 'IS-IS', info: 'IS-IS', payload: bytes.subarray(p+3)};
+    return {...result, ...addresses, protocol: 'LLC', info: `${ether === 0x8870 ? 'Jumbo LLC (EtherType 0x8870)' : 'LLC'}: DSAP 0x${hex(payload[0])}, SSAP 0x${hex(payload[1])}, Control 0x${hex(payload[2])}`};
   }
   if (ether === 0x8809) {
     const payload = bytes.subarray(p), isLacp = payload[0] === 1;

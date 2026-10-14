@@ -13,6 +13,7 @@ import roce from './dissectors/roce.js';
 import uet from './dissectors/uet.js';
 import ospf from './dissectors/ospf.js';
 import isis from './dissectors/isis.js';
+import esis from './dissectors/esis.js';
 import ethernetInIp from './dissectors/ethernet-in-ip.js';
 import icmp from './dissectors/icmp.js';
 import tcp from './dissectors/tcp.js';
@@ -50,6 +51,7 @@ registerDissector(roce);
 registerDissector(uet);
 registerDissector(ospf);
 registerDissector(isis);
+registerDissector(esis);
 registerDissector(ethernetInIp);
 registerDissector(icmp);
 registerDissector(tcp);
@@ -84,7 +86,7 @@ export function applyDissectors(packet, payload, dissectors, contexts = new Map(
     }
   }
   const selected = contexts.get(selectedDissector);
-  if (!payload.length && !(packet.protocol === 'UDP' && packet.dport === 4793) && !['ARP', 'LLDP', 'LACP', 'RoCE', 'UET', 'OSPF', 'IS-IS', 'Ethernet-in-IP', 'ICMP', 'ICMPv6', 'IPv4-in-IP', 'IPv6-in-IP', 'ESP', 'SCTP', 'GRE', 'PIM', 'VRRP', 'IGMP'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
+  if (!payload.length && !(packet.protocol === 'UDP' && packet.dport === 4793) && !['ARP', 'LLDP', 'LACP', 'RoCE', 'UET', 'OSPF', 'IS-IS', 'ESIS', 'Ethernet-in-IP', 'ICMP', 'ICMPv6', 'IPv4-in-IP', 'IPv6-in-IP', 'ESP', 'SCTP', 'GRE', 'PIM', 'VRRP', 'IGMP'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
   // Probe without mutating decoder state. Higher confidence wins; ties retain
   // the caller's order. Legacy match predicates remain low-confidence hints.
   const candidates = selected && dissectors.includes(selected)
