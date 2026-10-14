@@ -1,3 +1,6 @@
+import ipProtocols from './dissectors/ip-protocols.js';
+import ipv6, {ipv6Bytes} from './dissectors/ipv6.js';
+import ipInIp from './dissectors/ip-in-ip.js';
 import bmp from './dissectors/bmp.js';
 import bgp from './dissectors/bgp.js';
 import vxlan from './dissectors/vxlan.js';
@@ -32,6 +35,9 @@ export function registerDissector(dissector) {
   registry.set(dissector.name, dissector);
 }
 
+registerDissector(ipProtocols);
+registerDissector(ipv6);
+registerDissector(ipInIp);
 registerDissector(bmp);
 registerDissector(bgp);
 registerDissector(vxlan);
@@ -59,6 +65,9 @@ export function loadDissectors(names = 'all') {
 }
 
 export function applyDissectors(packet, payload, dissectors, contexts = new Map(), depth = 0) {
+  const network = packet[ipv6Bytes];
+  delete packet[ipv6Bytes];
+  if (network && dissectors.includes(ipv6)) packet.networkDetails = {dissector: 'ipv6', ...ipv6.dissect(network)};
   const raw = packet[transportBytes];
   delete packet[transportBytes];
   if (raw) {
@@ -75,12 +84,12 @@ export function applyDissectors(packet, payload, dissectors, contexts = new Map(
     }
   }
   const selected = contexts.get(selectedDissector);
-  if (!payload.length && !(packet.protocol === 'UDP' && packet.dport === 4793) && !['ARP', 'LLDP', 'LACP', 'RoCE', 'UET', 'OSPF', 'IS-IS', 'Ethernet-in-IP', 'ICMP', 'ICMPv6'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
+  if (!payload.length && !(packet.protocol === 'UDP' && packet.dport === 4793) && !['ARP', 'LLDP', 'LACP', 'RoCE', 'UET', 'OSPF', 'IS-IS', 'Ethernet-in-IP', 'ICMP', 'ICMPv6', 'IPv4-in-IP', 'IPv6-in-IP', 'ESP', 'SCTP', 'GRE', 'PIM', 'VRRP', 'IGMP'].includes(packet.protocol) && !(selected?.flushOnFin && (packet.flags & 1))) return;
   // Probe without mutating decoder state. Higher confidence wins; ties retain
   // the caller's order. Legacy match predicates remain low-confidence hints.
   const candidates = selected && dissectors.includes(selected)
     ? [selected]
-    : dissectors.filter(d => d.layer !== 'transport').map((dissector, order) => ({
+    : dissectors.filter(d => d.layer !== 'transport' && d.layer !== 'network').map((dissector, order) => ({
       dissector, order,
       score: dissector.probe ? dissector.probe(payload, packet)
         : (dissector.matches(packet) ? 1 : 0),

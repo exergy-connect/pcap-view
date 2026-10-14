@@ -108,7 +108,7 @@ export function parsePcapng(buffer, {dissectors = 'all'} = {}) {
     const resolve = target => {
       target.sourceNames = names.get(target.source) || [];
       target.destinationNames = names.get(target.destination) || [];
-      if (['vxlan', 'ethernet-in-ip'].includes(target.application?.dissector) && target.application.inner) {
+      if (['vxlan', 'ethernet-in-ip', 'ip-in-ip'].includes(target.application?.dissector) && target.application.inner) {
         resolve(target.application.inner);
         target.info = target.application.info = target.application.dissector === 'vxlan'
           ? summarizeVxlan(target.application) : summarizeEthernetInIp(target.application);

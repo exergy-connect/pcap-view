@@ -1,4 +1,5 @@
 import {dissectArp} from './dissectors/arp.js';
+import {dissectIpv6, ipv6Bytes, nextHeaderNames} from './dissectors/ipv6.js';
 import {transportBytes} from './dissectors/transport.js';
 
 // Shared packet-local link, network, and transport decoding.
@@ -8,7 +9,6 @@ export function decode(bytes, link) {
   const has = (p, n) => p + n <= bytes.length;
   const u16 = p => v.getUint16(p), u32 = p => v.getUint32(p);
   const ipv4 = p => Array.from(bytes.subarray(p, p + 4)).join('.');
-  const ipv6 = p => Array.from({length: 8}, (_, i) => u16(p + 2 * i).toString(16)).join(':');
   let p = 0, ether;
   if (link === 1) {
     if (!has(0,14)) return {...result, info:'Truncated Ethernet header'};
@@ -70,17 +70,15 @@ export function decode(bytes, link) {
     p += header;
   } else if (ether === 0x86dd) {
     result.protocol = 'IPv6';
-    if (!has(p,40)) return {...result,info:'Truncated IPv6 header'};
-    result.source = ipv6(p+8); result.destination = ipv6(p+24); proto = bytes[p+6];
-    limit = Math.min(limit,p+40+u16(p+4)); p += 40;
-    while ([0,43,44,51,60].includes(proto)) {
-      if (p+2 > limit) return {...result, info:'Truncated IPv6 extension'};
-      const next = bytes[p], len = proto === 44 ? 8 : proto === 51 ? (bytes[p+1]+2)*4 : (bytes[p+1]+1)*8;
-      if (p+len > limit) return {...result,info:'Truncated IPv6 extension'};
-      if (proto === 44 && (u16(p+2) & 0xfff8)) return {...result,info:'IPv6 fragment'};
-      p += len; proto = next;
-    }
+    const network = bytes.subarray(p), details = dissectIpv6(network);
+    result[ipv6Bytes] = network;
+    if (details.source) {result.source = details.source; result.destination = details.destination;}
+    if (details.error || details.fragment) return {...result, payload: new Uint8Array(), info: details.info};
+    proto = details.upperProtocol; limit = p + details.capturedLength; p += details.payloadOffset;
   } else return {...result, protocol: 'Ethernet', info: `EtherType 0x${ether.toString(16)}`};
+  if (proto === 4 || proto === 41) return {...result, protocol: nextHeaderNames[proto],
+    payload: bytes.subarray(p, limit), info: nextHeaderNames[proto]};
+  if (proto === 59) return {...result, payload: new Uint8Array(), info: 'IPv6 No Next Header'};
   if (proto === 143) {
     const protocol = 'Ethernet-in-IP';
     return {...result, protocol, payload: bytes.subarray(p, limit), info: protocol};
@@ -102,5 +100,5 @@ export function decode(bytes, link) {
     const length = u16(p+4);
     return {...result,protocol:'UDP',payload:length >= 8 ? bytes.subarray(p+8,Math.min(limit,p+length)) : new Uint8Array(),sport:u16(p),dport:u16(p+2),info:`${u16(p)} → ${u16(p+2)} Len=${Math.max(0,length-8)}`};
   }
-  return {...result,protocol:proto === 1 ? 'ICMP' : proto === 58 ? 'ICMPv6' : result.protocol,info:`IP protocol ${proto}`};
+  return {...result,protocol:nextHeaderNames[proto] ?? result.protocol,payload:bytes.subarray(p,limit),info:`IP protocol ${proto}${nextHeaderNames[proto] ? ` (${nextHeaderNames[proto]})` : ''}`};
 }
