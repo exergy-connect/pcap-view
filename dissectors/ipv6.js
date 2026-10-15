@@ -3,7 +3,7 @@ export const ipv6Bytes = Symbol('ipv6Bytes');
 export const nextHeaderNames = {0: 'Hop-by-Hop Options', 1: 'ICMP', 2: 'IGMP', 4: 'IPv4-in-IP',
   6: 'TCP', 17: 'UDP', 41: 'IPv6-in-IP', 43: 'Routing', 44: 'Fragment', 47: 'GRE',
   50: 'ESP', 51: 'AH', 58: 'ICMPv6', 59: 'No Next Header', 60: 'Destination Options',
-  89: 'OSPF', 103: 'PIM', 112: 'VRRP', 132: 'SCTP', 143: 'Ethernet-in-IP', 253: 'UET'};
+  89: 'OSPF', 103: 'PIM', 112: 'VRRP', 132: 'SCTP', 143: 'Ethernet-in-IP', 252: 'Falcon', 253: 'UET'};
 const hex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 export function dissectIpv6(bytes) {
   const result = {protocol: 'IPv6', extensionHeaders: []};
