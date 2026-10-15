@@ -91,14 +91,17 @@ export function dissectMrc(bytes) {
     if (p < end) result.data = hex(bytes.subarray(p, end));
   } catch (error) {result.error = error.message;}
   result.info = [result.name ?? 'MRC', result.bth ? `QP=${result.bth.destinationQp} PSN=${result.bth.psn}` : '',
-    result.bth?.retransmission ? 'Retransmission' : '', result.neth?.reasonName, result.error].filter(Boolean).join('; ');
+    result.bth?.retransmission ? 'Retransmission' : '',
+    result.seth ? `CACK=${result.seth.cumulativePsn} SACK base=${result.seth.sackBasePsn}` : '',
+    result.neth?.reasonName, result.error].filter(Boolean).join('; ');
   return result;
 }
 
 export default {
   name: 'mrc',
   probe(payload, packet) {
-    if (packet.protocol !== 'UDP' || !operations[payload[0]]) return 0;
+    if (packet.protocol !== 'UDP') return 0;
+    if (!operations[payload[0]]) return 0;
     if (payload.length >= 12 && (payload[1] & 15) === 0) return 100;
     return ports.includes(packet.dport) ? 1 : 0;
   },
