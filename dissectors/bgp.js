@@ -4,7 +4,7 @@ import {dissectPrefixSid} from './bgp-prefix-sid.js';
 const names = ['', 'OPEN', 'UPDATE', 'NOTIFICATION', 'KEEPALIVE', 'ROUTE-REFRESH'];
 const attributeNames = {1: 'ORIGIN', 2: 'AS_PATH', 3: 'NEXT_HOP', 4: 'MULTI_EXIT_DISC',
   5: 'LOCAL_PREF', 6: 'ATOMIC_AGGREGATE', 7: 'AGGREGATOR', 8: 'COMMUNITIES',
-  14: 'MP_REACH_NLRI', 15: 'MP_UNREACH_NLRI', 17: 'AS4_PATH', 18: 'AS4_AGGREGATOR', 32: 'LARGE_COMMUNITIES', 40: 'PREFIX_SID'};
+  14: 'MP_REACH_NLRI', 15: 'MP_UNREACH_NLRI', 16: 'EXTENDED_COMMUNITIES', 17: 'AS4_PATH', 18: 'AS4_AGGREGATOR', 32: 'LARGE_COMMUNITIES', 40: 'PREFIX_SID'};
 const hex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join(' ');
 const ipv4 = bytes => Array.from(bytes).join('.');
 
@@ -112,6 +112,35 @@ export function dissectBgp(bytes, {asnBytes = 4} = {}) {
           }
         } else if (type === 8 && length % 4 === 0) {
           attr.communities = []; for (; p < attrEnd; p += 4) attr.communities.push(`${view.getUint16(p)}:${view.getUint16(p + 2)}`);
+        } else if (type === 16) {
+          attr.communities = [];
+          if (length % 8 !== 0) {
+            attr.error = 'Invalid Extended Communities length: must be a multiple of 8';
+            message.error ??= attr.error;
+          } else for (; p < attrEnd; p += 8) {
+            const type = bytes[p], subtype = bytes[p + 1];
+            const community = {type, subtype, raw: hex(bytes.subarray(p, p + 8))};
+            // RFC 4360 / RFC 5668: administrator-specific RT and RO forms.
+            if ([0, 1, 2].includes(type) && [2, 3].includes(subtype)) {
+              community.name = subtype === 2 ? 'Route Target' : 'Route Origin';
+              if (type === 0) {
+                community.asn = view.getUint16(p + 2);
+                community.assignedNumber = view.getUint32(p + 4);
+              } else if (type === 1) {
+                community.address = ipv4(bytes.subarray(p + 2, p + 6));
+                community.assignedNumber = view.getUint16(p + 6);
+              } else {
+                community.asn = view.getUint32(p + 2);
+                community.assignedNumber = view.getUint16(p + 6);
+              }
+              community.value = `${community.address ?? community.asn}:${community.assignedNumber}`;
+            } else if (type === 3 && subtype === 12) {
+              community.name = 'Encapsulation';
+              community.tunnelType = view.getUint16(p + 6);
+              community.tunnelName = community.tunnelType === 8 ? 'VXLAN' : `Unknown tunnel type ${community.tunnelType}`;
+            } else community.name = 'Unknown extended community';
+            attr.communities.push(community);
+          }
         } else if (type === 32 && length % 12 === 0) {
           attr.communities = []; for (; p < attrEnd; p += 12) attr.communities.push(`${view.getUint32(p)}:${view.getUint32(p + 4)}:${view.getUint32(p + 8)}`);
         } else if ([7, 18].includes(type) && [6, 8].includes(length)) {

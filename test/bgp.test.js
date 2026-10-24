@@ -122,3 +122,50 @@ test('legacy two-byte AS paths and extended-length unknown attributes remain ins
   assert.equal(result.error,undefined); assert.deepEqual(result.pathAttributes[0].segments[0].asns,[64512]);
   assert.equal(result.pathAttributes[1].raw,'0c 22'); assert.equal(result.pathAttributes[1].flags.extendedLength,true);
 });
+
+test('Extended Communities decodes EVPN route target and VXLAN encapsulation', () => {
+  const raw = [0,2,0xfd,0xe8,0,0,0x27,0x1a,3,12,0,0,0,0,0,8];
+  const attrs = [192,16,raw.length,...raw];
+  const message = dissectBgp(bgp(2,[0,0,0,attrs.length,...attrs]));
+  assert.equal(message.error, undefined);
+  const attr = message.pathAttributes[0];
+  assert.equal(attr.name, 'EXTENDED_COMMUNITIES');
+  assert.equal(attr.length, 16);
+  assert.equal(attr.raw, '00 02 fd e8 00 00 27 1a 03 0c 00 00 00 00 00 08');
+  assert.equal(attr.communities[0].name, 'Route Target');
+  assert.equal(attr.communities[0].value, '65000:10010');
+  assert.equal(attr.communities[1].name, 'Encapsulation');
+  assert.equal(attr.communities[1].tunnelType, 8);
+  assert.equal(attr.communities[1].tunnelName, 'VXLAN');
+});
+
+test('Extended Communities preserves IPv4, four-byte ASN, route origin and unknown values', () => {
+  const raw = [1,2,192,0,2,1,0,42, 2,2,0xfa,0x56,0xea,0,0,7,
+    0,3,0xfd,0xe8,0,0,0,9, 0x80,99,1,2,3,4,5,6, 3,12,0,0,0,0,0,255];
+  const attrs = [208,16,0,raw.length,...raw,64,5,4,0,0,0,100];
+  // Exercise a nonzero byteOffset, as used by nested BMP BGP messages.
+  const update = bgp(2,[0,0,0,attrs.length,...attrs]);
+  const storage = new Uint8Array(update.length + 7); storage.set(update,7);
+  const message = dissectBgp(storage.subarray(7));
+  assert.equal(message.error, undefined);
+  const communities = message.pathAttributes[0].communities;
+  assert.equal(communities[0].value, '192.0.2.1:42');
+  assert.equal(communities[1].value, '4200000000:7');
+  assert.equal(communities[2].name, 'Route Origin');
+  assert.equal(communities[2].value, '65000:9');
+  assert.equal(communities[3].name, 'Unknown extended community');
+  assert.equal(communities[3].raw, '80 63 01 02 03 04 05 06');
+  assert.equal(communities[4].tunnelType, 255);
+  assert.equal(message.pathAttributes[1].value,100);
+});
+
+test('Extended Communities rejects partial communities without losing subsequent attributes', () => {
+  const attrs = [192,16,1,0,64,5,4,0,0,0,100];
+  const message = dissectBgp(bgp(2,[0,0,0,attrs.length,...attrs]));
+  assert.match(message.error, /multiple of 8/);
+  assert.equal(message.pathAttributes[0].raw, '00');
+  assert.equal(message.pathAttributes[1].value, 100);
+  const empty = dissectBgp(bgp(2,[0,0,0,3,192,16,0]));
+  assert.equal(empty.error, undefined);
+  assert.deepEqual(empty.pathAttributes[0].communities, []);
+});
