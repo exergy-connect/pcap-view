@@ -43,6 +43,11 @@ export function decode(bytes, link) {
       ...(link === 1 ? {source: Array.from(bytes.subarray(6, 12), b => b.toString(16).padStart(2, '0')).join(':'),
         destination: Array.from(bytes.subarray(0, 6), b => b.toString(16).padStart(2, '0')).join(':')} : {})};
   }
+  if (ether === 0x8847) {
+    return {...result, protocol: 'MPLS', info: 'MPLS unicast', payload: bytes.subarray(p),
+      ...(link === 1 ? {source: Array.from(bytes.subarray(6, 12), b => b.toString(16).padStart(2, '0')).join(':'),
+        destination: Array.from(bytes.subarray(0, 6), b => b.toString(16).padStart(2, '0')).join(':')} : {})};
+  }
   if (ether === 0x8915) {
     return {...result, protocol: 'RoCE', info: 'RDMA over Converged Ethernet', payload: bytes.subarray(p),
       ...(link === 1 ? {source: Array.from(bytes.subarray(6, 12), b => b.toString(16).padStart(2, '0')).join(':'),

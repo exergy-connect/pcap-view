@@ -1,5 +1,6 @@
 import {summarizeVxlan} from './dissectors/vxlan.js';
 import {summarizeEthernetInIp} from './dissectors/ethernet-in-ip.js';
+import {summarizeMpls} from './dissectors/mpls.js';
 import {decode} from './decode.js';
 import {loadDissectors, applyDissectors} from './dissectors.js';
 
@@ -108,10 +109,11 @@ export function parsePcapng(buffer, {dissectors = 'all'} = {}) {
     const resolve = target => {
       target.sourceNames = names.get(target.source) || [];
       target.destinationNames = names.get(target.destination) || [];
-      if (['vxlan', 'ethernet-in-ip', 'ip-in-ip'].includes(target.application?.dissector) && target.application.inner) {
+      if (['vxlan', 'ethernet-in-ip', 'ip-in-ip', 'mpls'].includes(target.application?.dissector) && target.application.inner) {
         resolve(target.application.inner);
         target.info = target.application.info = target.application.dissector === 'vxlan'
-          ? summarizeVxlan(target.application) : summarizeEthernetInIp(target.application);
+          ? summarizeVxlan(target.application) : target.application.dissector === 'mpls'
+            ? summarizeMpls(target.application) : summarizeEthernetInIp(target.application);
       }
     };
     resolve(endpoint);
